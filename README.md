@@ -1,4 +1,3 @@
-# nixos-c-cpp-clangd-guide
 # NixOS + VSCode + clangd Setup
 
 Quick guide for getting clangd working in VSCode on NixOS for C++ projects.
@@ -58,33 +57,36 @@ watch_file flake.lock
 
 ### 2. Get the Nix Store Paths
 
-After running `direnv allow`, run this to find your paths:
+After running `direnv allow`, run this to find ALL your paths:
 ```bash
-clang++ -E -x c++ - -v < /dev/null 2>&1 | grep "Selected GCC"
+clang++ -E -x c++ - -v < /dev/null 2>&1 | grep -A 20 "search starts here"
 ```
 
-Look for lines like:
-- `Selected GCC installation: /nix/store/XXX-gcc-14.3.0/...`
-- Include paths in the output
-
-You need these three paths:
-1. **GCC path**: `/nix/store/XXX-gcc-14.3.0`
-2. **glibc-dev path**: `/nix/store/XXX-glibc-2.40-66-dev`
-3. **clang resource path**: `/nix/store/XXX-clang-wrapper-21.1.2/resource-root`
+This will show the exact include search order. You need ALL five paths:
+1. **compiler-rt path**: `/nix/store/XXX-compiler-rt-libc-21.1.2-dev/include`
+2. **GCC C++ headers**: `/nix/store/XXX-gcc-14.3.0/include/c++/14.3.0`
+3. **GCC platform headers**: `/nix/store/XXX-gcc-14.3.0/include/c++/14.3.0/x86_64-unknown-linux-gnu`
+4. **clang resource path**: `/nix/store/XXX-clang-wrapper-21.1.2/resource-root/include`
+5. **glibc-dev path**: `/nix/store/XXX-glibc-2.40-66-dev/include`
 
 ### 3. Configure clangd
 
-Create `.clangd` with YOUR paths:
+Create `.clangd` with YOUR paths **in this exact order**:
 
 ```yaml
 CompileFlags:
   Add: 
     - -std=c++17
-    - --gcc-toolchain=/nix/store/YOUR-gcc-14.3.0
     - -isystem
-    - /nix/store/YOUR-glibc-2.40-66-dev/include
+    - /nix/store/YOUR-compiler-rt-libc-21.1.2-dev/include
+    - -isystem
+    - /nix/store/YOUR-gcc-14.3.0/include/c++/14.3.0
+    - -isystem
+    - /nix/store/YOUR-gcc-14.3.0/include/c++/14.3.0/x86_64-unknown-linux-gnu
     - -isystem
     - /nix/store/YOUR-clang-wrapper-21.1.2/resource-root/include
+    - -isystem
+    - /nix/store/YOUR-glibc-2.40-66-dev/include
 
 Diagnostics:
   UnusedIncludes: Strict
@@ -94,6 +96,8 @@ InlayHints:
   ParameterNames: Yes
   DeducedTypes: Yes
 ```
+
+**IMPORTANT**: The order matters! This must match the order from the `clang++` command output.
 
 ### 4. VSCode Settings
 
@@ -132,9 +136,10 @@ When you start a new project:
 
 ## Troubleshooting
 
-**"vector file not found" or similar errors:**
-- Your nix store paths in `.clangd` are wrong/outdated
-- Run the `clang++ -E -x c++ - -v` command to get fresh paths
+**"vector file not found", "stdlib.h not found", or similar header errors:**
+- Your nix store paths in `.clangd` are wrong/outdated/incomplete
+- Run `clang++ -E -x c++ - -v < /dev/null 2>&1 | grep -A 20 "search starts here"` to get fresh paths
+- Make sure you have ALL 5 include paths in the EXACT order shown
 - Update `.clangd` and restart language server
 
 **clangd not found:**
@@ -150,7 +155,7 @@ When you start a new project:
 
 - `flake.nix`: Provides clang, clangd, and gcc in isolated environment
 - `.envrc`: Auto-loads the nix environment when you enter the directory
-- `.clangd`: Tells clangd where to find standard library headers
+- `.clangd`: Tells clangd where to find ALL standard library headers in the correct search order
 - VSCode settings: Disables conflicting C++ extension and configures clangd
 
-The key insight: clangd needs explicit paths to gcc's standard library headers because NixOS doesn't use standard system paths like `/usr/include`.
+The key insight: clangd needs the EXACT same include paths in the SAME order that `clang++` uses. NixOS doesn't use standard system paths like `/usr/include`, so you must explicitly provide all 5 paths: compiler-rt, C++ headers, platform-specific C++ headers, clang resources, and glibc.
